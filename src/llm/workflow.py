@@ -12,13 +12,7 @@ except Exception:  # pragma: no cover - optional dependency
 from ..models import SummaryResult, SummaryStyle, TranscriptSegment, VideoMetadata
 from .prompts import build_prompt
 from .fallback import build_fallback_summary
-
-
-
-
-# Collapse transcript segments into one continuous text block.
-def _join_transcript(segments: Iterable[TranscriptSegment]) -> str:
-    return " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+from ..processing.transcript import join_transcript
 
 
 async def run_summarisation_workflow(
@@ -39,7 +33,7 @@ async def run_summarisation_workflow(
     Returns:
         SummaryResult: Contains the final Markdown summary.
     """
-    transcript_text = _join_transcript(transcript_segments or [])
+    transcript_text = join_transcript(transcript_segments or [])
 
 
 

@@ -1,8 +1,6 @@
 # wokeflow.py
 from __future__ import annotations
 
-import textwrap
-
 import os
 from typing import Iterable, List, Optional
 
@@ -12,11 +10,41 @@ except Exception:  # pragma: no cover - optional dependency
     OpenAI = None  # type: ignore
 
 from ..models import SummaryResult, SummaryStyle, TranscriptSegment, VideoMetadata
+from .prompts import build_prompt
+
 
 
 # Collapse transcript segments into one continuous text block.
 def _join_transcript(segments: Iterable[TranscriptSegment]) -> str:
     return " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+
+def _build_fallback_summary(
+    metadata: VideoMetadata,
+    transcript_text: str
+) -> str:
+    """
+    Builds a deterministic Markdown summary used when no LLM is available.
+    """
+
+    notes: List[str] = []
+    notes.append(f"Title: {metadata.title}")
+    if metadata.channel_title:
+        notes.append(f"Channel: {metadata.channel_title}")
+    if metadata.description:
+        notes.append(f"Description (truncated): {metadata.description[:300]}...")
+    if transcript_text:
+        notes.append(f"Transcript preview: {transcript_text[:500]}...")
+
+    key_topics: List[str] = metadata.tags[:10] if metadata.tags else []
+
+    return (
+        "## 📌 Summary\n"
+        f"Auto-generated summary for '{metadata.title}' (no LLM available).\n\n"
+        "## 📝 Detailed Notes\n"
+        + "\n".join(f"- {n}" for n in notes)
+        + "\n\n## 🎯 Key Topics\n"
+        + "\n".join(f"- {t}" for t in key_topics)
+    )
 
 
 async def run_summarisation_workflow(
@@ -45,7 +73,7 @@ async def run_summarisation_workflow(
     # If OpenAI is installed *and* an API key is present, use the real LLM.
     if OpenAI is not None and os.getenv("OPENAI_API_KEY"):
         client = OpenAI()
-        prompt = _build_prompt(metadata, transcript_text, style, language)
+        prompt = build_prompt(metadata, transcript_text, style, language)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -68,76 +96,17 @@ async def run_summarisation_workflow(
             video_id=metadata.video_id,
             summary=content,     # full Markdown
          )
-
+    
     # --- Fallback path ---
-    # Otherwise, generate a deterministic fallback summary.
-    notes: List[str] = []
-    notes.append(f"Title: {metadata.title}")
-    if metadata.channel_title:
-        notes.append(f"Channel: {metadata.channel_title}")
-    if metadata.description:
-        notes.append(f"Description (truncated): {metadata.description[:300]}...")
-    if transcript_text:
-        notes.append(f"Transcript preview: {transcript_text[:500]}...")
-
-    key_topics: List[str] = metadata.tags[:10] if metadata.tags else []
-
-    fallback_markdown = (
-        "## 📌 Summary\n"
-        f"Auto-generated summary for '{metadata.title}' (no LLM available).\n\n"
-        "## 📝 Detailed Notes\n"
-        + "\n".join(f"- {n}" for n in notes)
-        + "\n\n## 🎯 Key Topics\n"
-        + "\n".join(f"- {t}" for t in key_topics)
-    )
+    fallback_markdown = _build_fallback_summary(metadata, transcript_text)
 
     return SummaryResult(
         video_id=metadata.video_id,
         summary=fallback_markdown,
-   
     )
 
 
-def _build_prompt(
-    metadata: VideoMetadata,
-    transcript_text: str,
-    style: SummaryStyle,
-    language: str,
-) -> str:
 
-    return textwrap.dedent(f"""
-    Summarise the following YouTube video in {language}.
-
-    Title: {metadata.title}
-    Description: {metadata.description}
-    Channel: {metadata.channel_title}
-    Tags: {', '.join(metadata.tags or [])}
-
-    Transcript:
-    {transcript_text}
-
-    Return the final answer as clean, human-readable Markdown using the following structure:
-
-    ## 📌 Summary
-    A short paragraph summarising the video.
-
-    ## 📝 Detailed Notes
-    Bullet-pointed notes capturing the most important details.
-
-    ## 🎯 Key Topics
-    A list of the main themes or concepts.
-
-    ## ✔️ Action Items
-    Only include this section if relevant.
-
-    ## 🏷️ Content Type
-    A simple label describing the type of video.
-
-    Do not return JSON.
-    Do not wrap the output in code fences.
-    Do not include backticks.
-    The output must be pure Markdown.
-""")
 
 
      

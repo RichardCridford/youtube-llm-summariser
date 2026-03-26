@@ -1,6 +1,7 @@
 # wokeflow.py
-
 from __future__ import annotations
+
+import textwrap
 
 import os
 from typing import Iterable, List, Optional
@@ -12,14 +13,8 @@ except Exception:  # pragma: no cover - optional dependency
 
 from ..models import SummaryResult, SummaryStyle, TranscriptSegment, VideoMetadata
 
-#-----------------------------------------------------------------------------------
-# 1. 	Takes metadata + transcript
-# 2. 	Builds a prompt
-# 3. 	Asks the LLM to summarise it
-# 4. 	Returns a Summary result
-#-----------------------------------------------------------------------------------
 
-
+# Collapse transcript segments into one continuous text block.
 def _join_transcript(segments: Iterable[TranscriptSegment]) -> str:
     return " ".join(seg.text.strip() for seg in segments if seg.text.strip())
 
@@ -31,10 +26,23 @@ async def run_summarisation_workflow(
     language: str = "en",
     max_tokens: int = 1200,
 ) -> SummaryResult:
+    """
+    Orchestrates the full summarisation pipeline.
 
+    1. Joins transcript segments into a single text block.
+    2. Builds a prompt using metadata, transcript, style, and language.
+    3. Uses OpenAI (if available) to generate a Markdown summary.
+    4. Falls back to a deterministic Markdown summary if no LLM is available.
+
+    Returns:
+        SummaryResult: Contains the final Markdown summary.
+    """
     transcript_text = _join_transcript(transcript_segments or [])
 
+
+
     # --- LLM path ---
+    # If OpenAI is installed *and* an API key is present, use the real LLM.
     if OpenAI is not None and os.getenv("OPENAI_API_KEY"):
         client = OpenAI()
         prompt = _build_prompt(metadata, transcript_text, style, language)
@@ -62,6 +70,7 @@ async def run_summarisation_workflow(
          )
 
     # --- Fallback path ---
+    # Otherwise, generate a deterministic fallback summary.
     notes: List[str] = []
     notes.append(f"Title: {metadata.title}")
     if metadata.channel_title:
@@ -96,46 +105,40 @@ def _build_prompt(
     language: str,
 ) -> str:
 
-    style_description = {
-        SummaryStyle.meeting_notes: "meeting-style notes with clear bullet points and action items",
-        SummaryStyle.study_notes: "study notes emphasising key concepts and definitions",
-        SummaryStyle.tweet_thread: "a concise tweet-thread style outline",
-        SummaryStyle.generic: "a clear, general-purpose summary and bullet-point notes",
-    }[style]
+    return textwrap.dedent(f"""
+    Summarise the following YouTube video in {language}.
 
-    return f"""
-Summarise the following YouTube video in {language}.
+    Title: {metadata.title}
+    Description: {metadata.description}
+    Channel: {metadata.channel_title}
+    Tags: {', '.join(metadata.tags or [])}
 
-Title: {metadata.title}
-Description: {metadata.description}
-Channel: {metadata.channel_title}
-Tags: {', '.join(metadata.tags or [])}
+    Transcript:
+    {transcript_text}
 
-Transcript:
-{transcript_text}
+    Return the final answer as clean, human-readable Markdown using the following structure:
 
-Return the final answer as clean, human-readable Markdown using the following structure:
+    ## 📌 Summary
+    A short paragraph summarising the video.
 
-## 📌 Summary
-A short paragraph summarising the video.
+    ## 📝 Detailed Notes
+    Bullet-pointed notes capturing the most important details.
 
-## 📝 Detailed Notes
-Bullet-pointed notes capturing the most important details.
+    ## 🎯 Key Topics
+    A list of the main themes or concepts.
 
-## 🎯 Key Topics
-A list of the main themes or concepts.
+    ## ✔️ Action Items
+    Only include this section if relevant.
 
-## ✔️ Action Items
-Only include this section if relevant.
+    ## 🏷️ Content Type
+    A simple label describing the type of video.
 
-## 🏷️ Content Type
-A simple label describing the type of video.
+    Do not return JSON.
+    Do not wrap the output in code fences.
+    Do not include backticks.
+    The output must be pure Markdown.
+""")
 
-Do not return JSON. 
-Do not wrap the output in code fences. 
-Do not include backticks. 
-The output must be pure Markdown.
-"""
 
      
 

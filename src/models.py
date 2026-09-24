@@ -73,6 +73,16 @@ class VideoMetadata(BaseModel):
 
 
 class SummaryStyle(str, Enum):
+    """
+    Defines the supported output formats for video summaries.
+    The selected style is passed into the summarisation workflow and is
+    intended to influence prompt construction and output formatting.
+
+    Note:
+    The styles are currently defined and exposed through the API
+    but are not yet implemented in the prompt generation logic.
+    """
+
     meeting_notes = "meeting_notes"
     study_notes = "study_notes"
     tweet_thread = "tweet_thread"
@@ -80,10 +90,37 @@ class SummaryStyle(str, Enum):
 
 
 class SummaryResult(BaseModel):
-    video_id: str
-    summary: str # full Markdown Output
+   """
+    Represents the final output produced by the summarisation workflow.
+
+    A SummaryResult is generated after the workflow has processed the
+    video's metadata and transcript. It contains the completed summary
+    returned either by the LLM or by the deterministic fallback path.
+
+    Fields:
+    - video_id: Unique identifier of the summarised YouTube video.
+    - summary: The final human-readable Markdown summary.
+    """ 
+   video_id: str
+   summary: str 
     
 class CreateSummaryRequest(BaseModel):
+    """
+    Represents a client's request to generate a video summary.
+
+    This model defines the input accepted by the POST /v1/summaries
+    endpoint. A client may provide either a YouTube URL or a video ID,
+    along with optional settings that control how the summary is
+    generated.
+
+    Fields:
+    - url: Full YouTube URL for the video to summarise.
+    - video_id: YouTube video identifier. Can be used instead of a URL.
+    - style: Determines the structure and tone of the generated summary.
+    - language: Target language for the summary output.
+    - max_tokens: Maximum number of tokens the LLM may use when generating
+    the response.
+    """
     url: Optional[HttpUrl] = None
     video_id: Optional[str] = None
     style: SummaryStyle = SummaryStyle.generic
@@ -92,6 +129,21 @@ class CreateSummaryRequest(BaseModel):
 
 
 class Job(BaseModel):
+    """
+    Represents a summarisation job tracked by the server.
+
+    Jobs are created when a client submits a summary request and are
+    updated as they move through the processing pipeline. Clients can
+    poll a job to check its current status, retrieve a completed summary,
+    or inspect any errors that occurred during processing.
+
+    Fields:
+    - id: Unique identifier for the job.
+    - status: Current state of the job lifecycle.
+    - video_id: Identifier of the YouTube video being processed.
+    - error: Error message if the job fails.
+    - result: Final summary result when processing completes successfully.
+    """
     id: str
     status: JobStatus
     video_id: Optional [str] = None
